@@ -23,7 +23,6 @@ public class ColorPickerPlus: NSColorPicker, NSColorPickingCustom {
     @IBOutlet weak var txtHue: ColorRepresentingTextField!
     @IBOutlet weak var txtSaturation: ColorRepresentingTextField!
     @IBOutlet weak var txtBrightness: ColorRepresentingTextField!
-    @IBOutlet weak var txtHex: ColorRepresentingTextField!
     
     @IBOutlet weak var txtRed: ColorRepresentingTextField!
     @IBOutlet weak var txtGreen: ColorRepresentingTextField!
@@ -35,8 +34,7 @@ public class ColorPickerPlus: NSColorPicker, NSColorPickingCustom {
     @IBOutlet weak var labelBlue: ScrollingTextField!
     @IBOutlet weak var labelAlpha: ScrollingTextField!
     
-    @IBOutlet weak var copyPopUp: NSPopUpButton!
-    
+    var oldHex = ""
     var firstColorChange = true
     var currentColor: HSV {
         get {
@@ -81,8 +79,6 @@ public class ColorPickerPlus: NSColorPicker, NSColorPickingCustom {
             labelGreen.setup(inputField: txtGreen, formatter: formatter, min: 0, max: 255)
             labelBlue.setup(inputField: txtBlue, formatter: formatter, min: 0, max: 255)
             labelAlpha.setup(inputField: txtAlpha, formatter: formatter)
-            
-            txtHex.isHexField = true
 
         }
         
@@ -136,22 +132,6 @@ public class ColorPickerPlus: NSColorPicker, NSColorPickingCustom {
         }
     }
     
-    @IBAction func copyAction(_ sender: NSPopUpButton) {
-        Logger.debug(message: "Copy action called")
-        
-        var string = NSString(string: copyPopUp.selectedItem!.title)
-        let startIndex = string.components(separatedBy: " - ")[0].count + 3
-        
-        string = NSString(string: string.substring(from: startIndex))
-        
-        Logger.debug(message: "Copying value to clipboard: \(string)")
-        
-        let pasteboard = NSPasteboard.general
-        
-        pasteboard.clearContents()
-        pasteboard.setString(string as String, forType: .string)
-    }
-    
     @IBAction func changeColorComponentAction(_ sender: NSButton) {
         Logger.debug(message: "Changing active color component")
         
@@ -179,41 +159,6 @@ public class ColorPickerPlus: NSColorPicker, NSColorPickingCustom {
     /// Called when the user changes any of the text fields
     @IBAction func colorFieldChanged(_ sender: NSTextField) {
         Logger.debug(message: "Color textField changed \(sender.debugDescription)")
-        
-        // Hex text field
-        if (sender == txtHex) {
-            
-            var hexString = NSString(string: txtHex.stringValue)
-            
-            if (hexString.length < 3) {
-                return
-            }
-            
-            if (hexString.character(at: 0) == NSString(string: "#").character(at: 0)) {
-                hexString = NSString(string: hexString.substring(from: 1))
-                txtHex.stringValue = hexString as String
-            }
-            
-            if (hexString.length == 3) {
-                let first = hexString.substring(with: NSRange(location: 0, length: 1))
-                let secnd = hexString.substring(with: NSRange(location: 1, length: 1))
-                let thrd = hexString.substring(with: NSRange(location: 2, length: 1))
-                
-                hexString = NSString(string: "\(first)\(first)\(secnd)\(secnd)\(thrd)\(thrd)")
-            }
-            
-            guard let rgb = RGB.fromHEX(hexString) else {
-                Logger.debug(message: "Provided hex input is invalid: \(hexString)")
-                return
-            }
-            
-            let hsv = rgb.toHSV()
-            
-            Logger.debug(message: "Converting RGB to HSV: \(rgb) -> \(hsv)")
-            
-            setColor(hsv: hsv)
-            return
-        }
         
         // Hue text field
         if (sender === txtHue) {
@@ -361,18 +306,18 @@ extension ColorPickerPlus: ChangeColorDelegate {
         // Converting between RGB and HSV is not perfect, because of rounding errors.
         // This checks if the old rgb (before the color update) is the same when converted from RGB -> HSV And not only just HSV -> RGB.
         // If they are equal, the RGB colors will not be changed
-        let oldRgb = RGB.fromHEX(NSString(string: txtHex.stringValue))
+        let oldRgb = RGB.fromHEX(oldHex as NSString)
         
-        if let oldRgb = oldRgb {
-            if hsv.equals(hsv: oldRgb.toHSV()) {
-                Logger.debug(message: "Old RGB is the same!\nOriginal: \(oldRgb)\nConverted: \(rgb)")
-                rgb = oldRgb
+        if let instRgb = oldRgb {
+            if hsv.equals(hsv: instRgb.toHSV()) {
+                Logger.debug(message: "Old RGB is the same!\nOriginal: \(instRgb)\nConverted: \(rgb)")
+                rgb = instRgb
             }
         }
         
         Logger.debug(message: "Colors HSV: \(hsv), RGB: \(rgb)")
         
-        txtHex.stringValue = rgb.toHEX()
+        oldHex = rgb.toHEX()
         
         let formatter = self.textFieldsNumberFormatter!
         
@@ -385,58 +330,6 @@ extension ColorPickerPlus: ChangeColorDelegate {
         txtBlue.stringValue = formatter.string(from: (rgb.b * 255) as NSNumber)!
         
         txtAlpha.stringValue = formatter.string(from: (hsv.a * 100) as NSNumber)!
-        
-        let floatingNumberFormatter = NumberFormatter()
-        floatingNumberFormatter.numberStyle = .decimal
-        floatingNumberFormatter.maximumSignificantDigits = 3
-        floatingNumberFormatter.decimalSeparator = "."
-        
-        let floatR = floatingNumberFormatter.string(from: NSNumber(value: Float(rgb.r)))!
-        let floatG = floatingNumberFormatter.string(from: NSNumber(value: Float(rgb.g)))!
-        let floatB = floatingNumberFormatter.string(from: NSNumber(value: Float(rgb.b)))!
-        
-        copyPopUp.removeAllItems()
-        let copyMenu = copyPopUp.menu!
-        
-        copyMenu.addItem(withTitle: "Copy", action: nil, keyEquivalent: "")
-        
-        let hexItem = NSMenuItem(title: "HEX - #\(rgb.toHEX())", action: nil, keyEquivalent: "c")
-        hexItem.keyEquivalentModifierMask = [.control]
-        
-        copyMenu.addItem(hexItem)
-        
-        let rgbItem = NSMenuItem(title: "RGB - \(txtRed.stringValue), \(txtGreen.stringValue), \(txtBlue.stringValue)", action: nil, keyEquivalent: "r")
-        rgbItem.keyEquivalentModifierMask = [.control]
-        
-        copyMenu.addItem(rgbItem)
-
-        let floatRGBItem = NSMenuItem(title: "Float RGB - \(floatR), \(floatG), \(floatB)", action: nil, keyEquivalent: "R")
-        floatRGBItem.keyEquivalentModifierMask = [.control]
-        
-        copyMenu.addItem(floatRGBItem)
-
-        let hsvItem = NSMenuItem(title: "HSV - \(txtHue.stringValue), \(txtSaturation.stringValue), \(txtBrightness.stringValue)", action: nil, keyEquivalent: "h")
-        hsvItem.keyEquivalentModifierMask = [.control]
-        
-        copyMenu.addItem(hsvItem)
-        
-        copyMenu.addItem(NSMenuItem.separator())
-        
-        let webRGBItem = NSMenuItem(title: "Web RGB - rgb(\(txtRed.stringValue), \(txtGreen.stringValue), \(txtBlue.stringValue))", action: nil, keyEquivalent: "w")
-        webRGBItem.keyEquivalentModifierMask = [.control]
-        
-        copyMenu.addItem(webRGBItem)
-        
-        let webRGBaItem = NSMenuItem(title: "Web RGBa - rgba(\(txtRed.stringValue), \(txtGreen.stringValue), \(txtBlue.stringValue), \(txtAlpha.stringValue))", action: nil, keyEquivalent: "w")
-        webRGBaItem.keyEquivalentModifierMask = [.control, .shift]
-        
-        copyMenu.addItem(webRGBaItem)
-        
-        let webHSLItem = NSMenuItem(title: "Web HSL - hsl(\(txtHue.stringValue), \(txtSaturation.stringValue)%, \(txtBrightness.stringValue)%)", action: nil, keyEquivalent: "w")
-        webHSLItem.keyEquivalentModifierMask = [.control, .option]
-        
-        copyMenu.addItem(webHSLItem)
-        
     }
     
 }
